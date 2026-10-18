@@ -28,11 +28,11 @@ export class TossError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
   const auth = Buffer.from(`${config.secretKey()}:`).toString("base64");
   const res = await fetch(`${config.apiBase()}${path}`, {
     method,
-    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json", ...extraHeaders },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(65_000), // transactions API can take up to 60s
   });
@@ -44,8 +44,10 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const toss = {
+  // Toss returns the first result again for a repeated Idempotency-Key, so a retry after a
+  // timeout cannot approve the same payment twice. Keyed by paymentKey, so a new attempt gets a new key.
   confirm: (input: { paymentKey: string; orderId: string; amount: number }) =>
-    call<TossPayment>("POST", "/v1/payments/confirm", input),
+    call<TossPayment>("POST", "/v1/payments/confirm", input, { "Idempotency-Key": `confirm-${input.paymentKey}` }),
 
   getPayment: (paymentKey: string) =>
     call<TossPayment>("GET", `/v1/payments/${encodeURIComponent(paymentKey)}`),

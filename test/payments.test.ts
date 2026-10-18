@@ -11,6 +11,8 @@ beforeEach(async () => {
   ctx = await startApp();
   toss.calls.length = 0;
   toss.rejectConfirm = false;
+  toss.confirmDelayMs = 0;
+  toss.idempotencyKeys.length = 0;
 });
 afterAll(async () => {
   await ctx.db.end();
@@ -56,6 +58,26 @@ describe("payment confirmation", () => {
     expect(toss.calls).toEqual(["POST /v1/payments/confirm"]);
     const { rows } = await ctx.db.query("SELECT 1 FROM payments");
     expect(rows).toHaveLength(1);
+  });
+
+  it("calls Toss confirm once when the same order is confirmed twice at the same time", async () => {
+    toss.confirmDelayMs = 200; // keep the first confirm in flight while the second arrives
+    const order = await newOrder();
+    const body = { paymentKey: "pk-6", orderId: order.orderId, amount: order.amount };
+    const [a, b] = await Promise.all([
+      postJson(ctx.app, "/api/payments/confirm", body),
+      postJson(ctx.app, "/api/payments/confirm", body),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(toss.calls).toEqual(["POST /v1/payments/confirm"]);
+    expect((await ctx.db.query("SELECT 1 FROM payments")).rowCount).toBe(1);
+    expect(await orderStatus(order.orderId)).toBe("PAID");
+  });
+
+  it("sends an Idempotency-Key tied to the paymentKey so Toss also dedupes a retry", async () => {
+    const order = await newOrder();
+    await postJson(ctx.app, "/api/payments/confirm", { paymentKey: "pk-7", orderId: order.orderId, amount: order.amount });
+    expect(toss.idempotencyKeys).toEqual(["confirm-pk-7"]);
   });
 
   it("surfaces a Toss rejection and keeps the order PENDING", async () => {

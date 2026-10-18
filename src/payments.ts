@@ -21,25 +21,28 @@ export async function confirmPayment(
   db: Db,
   input: { paymentKey: string; orderId: string; amount: number },
 ): Promise<StoredPayment> {
-  const { rows } = await db.query<{ amount: number; status: string }>(
-    "SELECT amount, status FROM orders WHERE order_id = $1",
-    [input.orderId],
-  );
-  const order = rows[0];
-  if (!order) throw new UnknownOrderError(`Unknown orderId ${input.orderId}`);
-
-  // The values on the successUrl come from the browser, so check them against our own record first.
-  if (order.amount !== input.amount) {
-    throw new AmountMismatchError(
-      `Amount mismatch for ${input.orderId}: order has ${order.amount}, request has ${input.amount}`,
-    );
-  }
-
-  if (order.status === "PAID") return findPaymentByOrder(db, input.orderId);
-
-  const payment = await toss.confirm(input);
-
+  // The order row stays locked until commit, so a second confirm for the same order waits here,
+  // then sees PAID and returns the stored payment instead of calling Toss again.
+  // The lock is held across the Toss call; fine for one order at a time, not for long batches.
   return inTransaction(db, async (tx) => {
+    const { rows } = await tx.query<{ amount: number; status: string }>(
+      "SELECT amount, status FROM orders WHERE order_id = $1 FOR UPDATE",
+      [input.orderId],
+    );
+    const order = rows[0];
+    if (!order) throw new UnknownOrderError(`Unknown orderId ${input.orderId}`);
+
+    // The values on the successUrl come from the browser, so check them against our own record first.
+    if (order.amount !== input.amount) {
+      throw new AmountMismatchError(
+        `Amount mismatch for ${input.orderId}: order has ${order.amount}, request has ${input.amount}`,
+      );
+    }
+
+    if (order.status === "PAID") return findPaymentByOrder(tx, input.orderId);
+
+    const payment = await toss.confirm(input);
+
     await tx.query(
       `INSERT INTO payments (payment_key, order_id, amount, status, approved_at)
        VALUES ($1, $2, $3, $4, $5)

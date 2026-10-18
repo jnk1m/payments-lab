@@ -16,6 +16,8 @@ export type FakeToss = {
   transactions: unknown[];
   rejectConfirm: boolean;
   failLookup: boolean;
+  confirmDelayMs: number;
+  idempotencyKeys: (string | undefined)[];
   close(): Promise<void>;
 };
 
@@ -26,6 +28,8 @@ export async function startFakeToss(): Promise<FakeToss> {
     transactions: [],
     rejectConfirm: false,
     failLookup: false,
+    confirmDelayMs: 0,
+    idempotencyKeys: [],
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
   const server: Server = createServer((req, res) => {
@@ -39,9 +43,11 @@ export async function startFakeToss(): Promise<FakeToss> {
         res.end(JSON.stringify(body));
       };
       if (req.method === "POST" && url.pathname === "/v1/payments/confirm") {
+        state.idempotencyKeys.push(req.headers["idempotency-key"] as string | undefined);
         if (state.rejectConfirm) return send(400, { code: "REJECT_CARD_COMPANY", message: "card rejected" });
         const body = JSON.parse(raw);
-        return send(200, { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount });
+        const reply = () => send(200, { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount });
+        return state.confirmDelayMs ? void setTimeout(reply, state.confirmDelayMs) : reply();
       }
       if (req.method === "GET" && url.pathname.startsWith("/v1/payments/")) {
         if (state.failLookup) return send(500, { code: "FAILED_INTERNAL_SYSTEM_PROCESSING", message: "down" });
