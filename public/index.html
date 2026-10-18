@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>payments-lab</title>
+  <script src="https://js.tosspayments.com/v2/standard"></script>
+  <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem}button{width:100%;padding:.8rem;font-size:1rem}</style>
+</head>
+<body>
+  <h1>payments-lab</h1>
+  <p>Test payment only. Toss documentation test keys, no real money.</p>
+  <div id="payment-method"></div>
+  <div id="agreement"></div>
+  <button id="pay">Pay</button>
+  <script>
+    (async () => {
+      const order = await fetch("/api/orders", { method: "POST" }).then((r) => r.json());
+      const widgets = TossPayments("__CLIENT_KEY__").widgets({ customerKey: TossPayments.ANONYMOUS });
+      await widgets.setAmount({ currency: "KRW", value: order.amount });
+      await Promise.all([
+        widgets.renderPaymentMethods({ selector: "#payment-method" }),
+        widgets.renderAgreement({ selector: "#agreement" }),
+      ]);
+      document.getElementById("pay").addEventListener("click", () =>
+        widgets.requestPayment({
+          orderId: order.orderId,
+          orderName: order.orderName,
+          successUrl: location.origin + "/success",
+          failUrl: location.origin + "/fail",
+        }),
+      );
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>payments-lab</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem">
+  <h1 id="title">Confirming...</h1>
+  <pre id="result"></pre>
+  <script>
+    const p = new URLSearchParams(location.search);
+    fetch("/api/payments/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentKey: p.get("paymentKey"), orderId: p.get("orderId"), amount: p.get("amount") }),
+    }).then(async (res) => {
+      document.getElementById("title").textContent = res.ok ? "Payment confirmed" : "Confirmation failed";
+      document.getElementById("result").textContent = JSON.stringify(await res.json(), null, 2);
+    });
+  </script>
+</body>
+</html>

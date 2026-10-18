@@ -1,0 +1,15 @@
+{
+  "version": "2022-11-16",
+  "paymentKey": "tgen_20261018_fixture_0001",
+  "type": "NORMAL",
+  "orderId": "order-fixture-0001",
+  "orderName": "Test coffee beans",
+  "method": "카드",
+  "status": "DONE",
+  "currency": "KRW",
+  "totalAmount": 15000,
+  "balanceAmount": 15000,
+  "requestedAt": "2026-10-18T10:00:00+09:00",
+  "approvedAt": "2026-10-18T10:00:05+09:00",
+  "cancels": null
+}

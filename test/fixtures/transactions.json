@@ -1,0 +1,7 @@
+[
+  { "transactionKey": "tx-1", "paymentKey": "pk-ok", "orderId": "o-ok", "status": "DONE", "amount": 15000, "transactionAt": "2026-10-18T10:00:05+09:00" },
+  { "transactionKey": "tx-2", "paymentKey": "pk-amount", "orderId": "o-amount", "status": "DONE", "amount": 15000, "transactionAt": "2026-10-18T10:05:00+09:00" },
+  { "transactionKey": "tx-3", "paymentKey": "pk-status", "orderId": "o-status", "status": "DONE", "amount": 15000, "transactionAt": "2026-10-18T10:10:00+09:00" },
+  { "transactionKey": "tx-4", "paymentKey": "pk-status", "orderId": "o-status", "status": "CANCELED", "amount": 15000, "transactionAt": "2026-10-18T11:00:00+09:00" },
+  { "transactionKey": "tx-5", "paymentKey": "pk-only-toss", "orderId": "o-only-toss", "status": "DONE", "amount": 9000, "transactionAt": "2026-10-18T12:00:00+09:00" }
+]
