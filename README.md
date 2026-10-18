@@ -1,5 +1,7 @@
 # payments-lab
 
+[![CI](https://github.com/jnk1m/payments-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/jnk1m/payments-lab/actions/workflows/ci.yml)
+
 A small Toss Payments (test environment) backend that does three things a payments service has to get right: confirm a payment only after checking the amount, take payment state from the lookup API instead of the webhook body, and reconcile Toss transactions against our own records.
 
 I built it as a compact, readable sample of how I handle payment flows. It is about 350 lines of TypeScript, a one-page frontend, and 12 integration tests that run against a real PostgreSQL.

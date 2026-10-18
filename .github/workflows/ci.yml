@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: payments
+          POSTGRES_PASSWORD: payments
+          POSTGRES_DB: payments
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U payments"
+          --health-interval 2s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://payments:payments@localhost:5433/payments
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: psql "$DATABASE_URL" -f db/schema.sql
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
