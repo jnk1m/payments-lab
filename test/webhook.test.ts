@@ -64,6 +64,30 @@ describe("webhook", () => {
     expect(await paymentStatus()).toBe("CANCELED");
   });
 
+  it("webhook that arrives before confirm is not lost", async () => {
+    const early = await (await postJson(ctx.app, "/api/orders", {})).json();
+    // Toss approved and sent the webhook before our confirm committed.
+    toss.payments["pk-early"] = { ...paymentDone, paymentKey: "pk-early", orderId: early.orderId, totalAmount: early.amount };
+    const res = await send("t-5", { paymentKey: "pk-early", orderId: early.orderId });
+    expect(await res.json()).toEqual({ result: "applied" });
+    const order = await ctx.db.query("SELECT status FROM orders WHERE order_id = $1", [early.orderId]);
+    expect(order.rows[0].status).toBe("PAID");
+
+    // The browser's confirm arrives afterwards and gets the stored payment without a second approval.
+    toss.calls.length = 0;
+    const confirm = await postJson(ctx.app, "/api/payments/confirm", { paymentKey: "pk-early", orderId: early.orderId, amount: early.amount });
+    expect(confirm.status).toBe(200);
+    expect(toss.calls).toEqual([]);
+  });
+
+  it("unknown_payment webhook does not consume the transmission id", async () => {
+    toss.payments["pk-unknown"] = { ...paymentDone, paymentKey: "pk-unknown", status: "DONE" };
+    expect(await (await send("t-6", { paymentKey: "pk-unknown" })).json()).toEqual({ result: "unknown_payment" });
+    expect((await ctx.db.query("SELECT 1 FROM webhook_events WHERE transmission_id = 't-6'")).rowCount).toBe(0);
+    // A retry of the same delivery is looked at again, not dropped as a duplicate.
+    expect(await (await send("t-6", { paymentKey: "pk-unknown" })).json()).toEqual({ result: "unknown_payment" });
+  });
+
   it("returns 200 and changes nothing for a payment we do not know", async () => {
     toss.payments["pk-unknown"] = { ...paymentDone, paymentKey: "pk-unknown", status: "CANCELED" };
     const res = await send("t-4", { paymentKey: "pk-unknown" });
