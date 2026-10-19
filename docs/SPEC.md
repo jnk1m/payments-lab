@@ -45,17 +45,25 @@ TypeScript, Node 22+, Hono, PostgreSQL 16 (docker compose), vitest, eslint. Toss
 - R4.1 Integration tests for R1, R2, R3 run against a real PostgreSQL.
 - R4.2 Toss responses come from recorded-format JSON fixtures served by a local HTTP server. The app code uses its real HTTP client. No mocking of our own modules.
 
+### R5 Recovery
+
+- R5.1 `settle` is the only code that sets an order to `PAID`. It locks the order row and compares the Toss amount with the order amount. Confirm, the webhook and recovery all use it.
+- R5.2 `npm run recover -- [graceSeconds]` looks up orders still `PENDING` after the grace period with `GET /v1/payments/orders/{orderId}` and settles those Toss reports as `DONE`. It never calls confirm or cancel.
+- R5.3 A Toss amount that differs from the order amount leaves the order `PENDING` and makes the command exit 1.
+- R5.4 A webhook for an approved payment of a known order settles it, even if confirm has not committed yet. A webhook that still cannot be matched does not keep its transmission id, so a Toss retry is processed again.
+
 ## Acceptance criteria
 
 | # | Criterion |
 |---|---|
-| A1 | `docker compose up -d` then `npm test` passes all tests (target: at least 12) |
+| A1 | `docker compose up -d` then `npm test` passes all tests (target: at least 19) |
 | A2 | `npm run lint` and `npm run typecheck` pass with 0 errors |
 | A3 | Tampered amount: 0 Toss calls, order stays `PENDING` (tested) |
 | A4 | The same webhook sent 3 times: 1 lookup call, 1 stored event (tested) |
 | A5 | Reconcile on a fixture with 1 of each mismatch kind reports exactly 4 items (tested) |
 | A6 | One test payment completes in a real browser on localhost with the docs test keys |
 | A7 | No real or live key anywhere in the repo (`grep` for `live_` returns nothing) |
+| A8 | Toss approved but the DB write failed: recovery settles the order with 1 lookup call and 0 confirm calls (tested) |
 
 ## Not doing
 

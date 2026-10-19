@@ -44,13 +44,18 @@ async function call<T>(method: string, path: string, body?: unknown, extraHeader
 }
 
 export const toss = {
-  // Toss returns the first result again for a repeated Idempotency-Key, so a retry after a
-  // timeout cannot approve the same payment twice. Keyed by paymentKey, so a new attempt gets a new key.
+  // Toss documents that a POST repeated with the same Idempotency-Key within 15 days gets the first
+  // response, so a retry after a timeout should not approve twice. Keyed by paymentKey, so a new attempt
+  // gets a new key. Verified on cancel with the docs test key; not replayed on confirm.
   confirm: (input: { paymentKey: string; orderId: string; amount: number }) =>
     call<TossPayment>("POST", "/v1/payments/confirm", input, { "Idempotency-Key": `confirm-${input.paymentKey}` }),
 
   getPayment: (paymentKey: string) =>
     call<TossPayment>("GET", `/v1/payments/${encodeURIComponent(paymentKey)}`),
+
+  // Used by recovery, when we may never have seen the paymentKey.
+  getPaymentByOrderId: (orderId: string) =>
+    call<TossPayment>("GET", `/v1/payments/orders/${encodeURIComponent(orderId)}`),
 
   // startDate and endDate use yyyy-MM-dd'T'HH:mm:ss. Pages by transactionKey.
   async listTransactions(startDate: string, endDate: string): Promise<TossTransaction[]> {

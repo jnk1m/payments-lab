@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "reconcile": "tsx scripts/reconcile.ts",
+    "recover": "tsx scripts/recover.ts",
     "webhook:send": "tsx scripts/send-webhook.ts"
   },
   "dependencies": {
