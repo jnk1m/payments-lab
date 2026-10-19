@@ -8,7 +8,7 @@ A small, readable reference for three things a payments backend has to get right
 2. Treat a webhook as a hint, and take the state from the payment lookup API.
 3. Find mismatches between Toss transactions and our own records.
 
-Audience: a hiring manager or reviewer who reads the repo in about 10 minutes. Total source should stay small (target: under 600 lines in `src/` and `scripts/`, excluding tests and the HTML page).
+Audience: a hiring manager or reviewer who reads the repo in about 10 minutes. Total source should stay small (target: under 750 lines in `src/` and `scripts/`, raised from 600 when recovery and cancels were added, excluding tests and the HTML page).
 
 ## Stack
 
@@ -47,16 +47,23 @@ TypeScript, Node 22+, Hono, PostgreSQL 16 (docker compose), vitest, eslint. Toss
 
 ### R5 Recovery
 
-- R5.1 `settle` is the only code that sets an order to `PAID`. It locks the order row and compares the Toss amount with the order amount. Confirm, the webhook and recovery all use it.
-- R5.2 `npm run recover -- [graceSeconds]` looks up orders still `PENDING` after the grace period with `GET /v1/payments/orders/{orderId}` and settles those Toss reports as `DONE`. It never calls confirm or cancel.
+- R5.1 `applyPayment` is the only code that changes an order's status. It locks the order row, compares the Toss amount with the order amount, and only moves status forward (PENDING, PAID, PARTIALLY_CANCELED, CANCELED) with a non-increasing balance. Confirm, cancel, the webhook and recovery all use it.
+- R5.2 `npm run recover -- [graceSeconds]` looks up orders still `PENDING` after the grace period with `GET /v1/payments/orders/{orderId}` and applies what Toss reports. It never calls confirm. It also replays cancels still `REQUESTED` after the grace period with their original key, and refuses ones older than 14 days.
 - R5.3 A Toss amount that differs from the order amount leaves the order `PENDING` and makes the command exit 1.
-- R5.4 A webhook for an approved payment of a known order settles it, even if confirm has not committed yet. A webhook that still cannot be matched does not keep its transmission id, so a Toss retry is processed again.
+- R5.4 A webhook for an approved payment of a known order applies it, even if confirm has not committed yet. A webhook that still cannot be matched does not keep its transmission id, so a Toss retry is processed again.
+
+### R6 Cancel
+
+- R6.1 `POST /api/orders/:orderId/cancel` takes `cancelReason` and an optional positive integer `cancelAmount` (omitted means the rest of the balance), and requires an `Idempotency-Key` header.
+- R6.2 With the order locked, it rejects orders that are not PAID or PARTIALLY_CANCELED (409), amounts that are not positive integers (400), amounts above the balance (400) and a second cancel while one is still `REQUESTED` (409), all without calling Toss. It then records the request as `REQUESTED` and releases the lock.
+- R6.3 It calls Toss with a key derived from the order and request key, applies the result, and marks the request `DONE`. A Toss 4xx other than 409 marks it `FAILED`. Anything else leaves it `REQUESTED` for recovery.
+- R6.4 The same request key again returns the current state without calling Toss; with a different amount it returns 422; while still running, or after it failed, it returns 409.
 
 ## Acceptance criteria
 
 | # | Criterion |
 |---|---|
-| A1 | `docker compose up -d` then `npm test` passes all tests (target: at least 19) |
+| A1 | `docker compose up -d` then `npm test` passes all tests (target: at least 25) |
 | A2 | `npm run lint` and `npm run typecheck` pass with 0 errors |
 | A3 | Tampered amount: 0 Toss calls, order stays `PENDING` (tested) |
 | A4 | The same webhook sent 3 times: 1 lookup call, 1 stored event (tested) |
@@ -64,11 +71,12 @@ TypeScript, Node 22+, Hono, PostgreSQL 16 (docker compose), vitest, eslint. Toss
 | A6 | One test payment completes in a real browser on localhost with the docs test keys |
 | A7 | No real or live key anywhere in the repo (`grep` for `live_` returns nothing) |
 | A8 | Toss approved but the DB write failed: recovery settles the order with 1 lookup call and 0 confirm calls (tested) |
+| A9 | Two concurrent 10,000 won cancels on a 15,000 won payment: 1 Toss cancel call, one 409, balance 5,000 (tested) |
 
 ## Not doing
 
 - Live keys, real money, any production deployment.
-- Partial cancel, refund flow, virtual accounts, billing keys.
+- Virtual accounts, billing keys, refund split across coupons or points, cancels after settlement, cancel fees.
 - Settlement (정산) calculation.
 - Webhook signature checks (the docs describe signatures only for payout and seller events; this event is verified by lookup instead).
 - Auth, users, carts, an admin UI, a job queue, an ORM.
