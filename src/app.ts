@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import type { Db } from "./db.js";
 import { config } from "./config.js";
+import { cancelOrder, CancelRejected } from "./cancel.js";
 import { AmountMismatchError, UnknownOrderError, confirmPayment, createOrder } from "./payments.js";
 import { TossError } from "./toss.js";
 import { handleWebhook, type WebhookBody } from "./webhook.js";
@@ -24,6 +25,21 @@ export function createApp(db: Db) {
     } catch (err) {
       if (err instanceof AmountMismatchError) return c.json({ code: "AMOUNT_MISMATCH", message: err.message }, 400);
       if (err instanceof UnknownOrderError) return c.json({ code: "UNKNOWN_ORDER", message: err.message }, 404);
+      if (err instanceof TossError) return c.json({ code: err.code, message: err.message }, 502);
+      throw err;
+    }
+  });
+
+  app.post("/api/orders/:orderId/cancel", async (c) => {
+    // The caller's key makes a retry of the same cancel safe; Toss caps keys at 300 characters.
+    const requestKey = c.req.header("Idempotency-Key");
+    if (!requestKey || requestKey.length > 200) return c.json({ code: "MISSING_IDEMPOTENCY_KEY" }, 400);
+    const { cancelReason, cancelAmount } = await c.req.json();
+    if (typeof cancelReason !== "string" || !cancelReason) return c.json({ code: "MISSING_CANCEL_REASON" }, 400);
+    try {
+      return c.json(await cancelOrder(db, { orderId: c.req.param("orderId"), requestKey, cancelReason, cancelAmount }));
+    } catch (err) {
+      if (err instanceof CancelRejected) return c.json({ code: err.code, message: err.message }, err.httpStatus);
       if (err instanceof TossError) return c.json({ code: err.code, message: err.message }, 502);
       throw err;
     }

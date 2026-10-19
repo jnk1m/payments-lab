@@ -5,7 +5,9 @@ export type TossPayment = {
   orderId: string;
   status: string;
   totalAmount: number;
+  balanceAmount: number;
   approvedAt: string;
+  cancels: { transactionKey: string; cancelAmount: number; canceledAt: string }[] | null;
 };
 
 export type TossTransaction = {
@@ -52,6 +54,13 @@ export const toss = {
 
   getPayment: (paymentKey: string) =>
     call<TossPayment>("GET", `/v1/payments/${encodeURIComponent(paymentKey)}`),
+
+  // The key is the caller's request key, so a replay of the same request returns the first result
+  // and a different request is a new cancel. cancelAmount omitted means the whole balance.
+  cancel: (paymentKey: string, body: { cancelReason: string; cancelAmount: number }, idempotencyKey: string) =>
+    call<TossPayment>("POST", `/v1/payments/${encodeURIComponent(paymentKey)}/cancel`, body, {
+      "Idempotency-Key": idempotencyKey,
+    }),
 
   // Used by recovery, when we may never have seen the paymentKey.
   getPaymentByOrderId: (orderId: string) =>
