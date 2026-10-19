@@ -46,8 +46,16 @@ export async function startFakeToss(): Promise<FakeToss> {
         state.idempotencyKeys.push(req.headers["idempotency-key"] as string | undefined);
         if (state.rejectConfirm) return send(400, { code: "REJECT_CARD_COMPANY", message: "card rejected" });
         const body = JSON.parse(raw);
-        const reply = () => send(200, { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount });
+        // Toss keeps the approval, so a later lookup finds it even if our side never stored it.
+        const approved = { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount };
+        state.payments[body.paymentKey] = approved;
+        const reply = () => send(200, approved);
         return state.confirmDelayMs ? void setTimeout(reply, state.confirmDelayMs) : reply();
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/v1/payments/orders/")) {
+        const orderId = decodeURIComponent(url.pathname.split("/").pop()!);
+        const found = Object.values(state.payments).find((p) => (p as { orderId: string }).orderId === orderId);
+        return found ? send(200, found) : send(404, { code: "NOT_FOUND_PAYMENT", message: "not found" });
       }
       if (req.method === "GET" && url.pathname.startsWith("/v1/payments/")) {
         if (state.failLookup) return send(500, { code: "FAILED_INTERNAL_SYSTEM_PROCESSING", message: "down" });
