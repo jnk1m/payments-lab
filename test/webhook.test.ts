@@ -88,6 +88,29 @@ describe("webhook", () => {
     expect(await (await send("t-6", { paymentKey: "pk-unknown" })).json()).toEqual({ result: "unknown_payment" });
   });
 
+  it("older lookup result cannot overwrite a newer status when two webhooks race", async () => {
+    toss.payments["pk-w"] = { ...paymentDone, paymentKey: "pk-w", orderId, status: "CANCELED", balanceAmount: 0 };
+    await send("t-7");
+    // A second delivery whose lookup ran earlier and still saw DONE is processed last.
+    toss.payments["pk-w"] = { ...paymentDone, paymentKey: "pk-w", orderId, status: "DONE", balanceAmount: 15000 };
+    expect(await (await send("t-8")).json()).toEqual({ result: "stale" });
+    expect(await paymentStatus()).toBe("CANCELED");
+    const order = await ctx.db.query("SELECT status FROM orders WHERE order_id = $1", [orderId]);
+    expect(order.rows[0].status).toBe("CANCELED");
+  });
+
+  it("a late approval webhook never moves a canceled order back to PAID", async () => {
+    toss.payments["pk-w"] = { ...paymentDone, paymentKey: "pk-w", orderId, status: "PARTIAL_CANCELED", balanceAmount: 5000 };
+    await send("t-9");
+    toss.payments["pk-w"] = { ...paymentDone, paymentKey: "pk-w", orderId, status: "DONE", balanceAmount: 15000 };
+    await send("t-10");
+    const row = await ctx.db.query(
+      "SELECT o.status, p.balance_amount FROM orders o JOIN payments p USING (order_id) WHERE o.order_id = $1",
+      [orderId],
+    );
+    expect(row.rows[0]).toEqual({ status: "PARTIALLY_CANCELED", balance_amount: 5000 });
+  });
+
   it("returns 200 and changes nothing for a payment we do not know", async () => {
     toss.payments["pk-unknown"] = { ...paymentDone, paymentKey: "pk-unknown", status: "CANCELED" };
     const res = await send("t-4", { paymentKey: "pk-unknown" });
