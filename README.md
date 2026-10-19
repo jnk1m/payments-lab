@@ -6,7 +6,7 @@ A small Toss Payments (test environment) backend that does five things a payment
 
 Start with [docs/STATES.md](docs/STATES.md): every way the money and the records can drift apart, and the test that covers each one.
 
-I built it as a compact, readable sample of how I handle payment flows. It is about 690 lines of TypeScript, a one-page frontend, and 33 integration tests that run against a real PostgreSQL.
+It is a compact, readable sample of how payment flows should be handled. It is about 690 lines of TypeScript, a one-page frontend, and 33 integration tests that run against a real PostgreSQL.
 
 It uses only the public documentation test keys. No real money and no live keys are involved.
 
