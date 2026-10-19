@@ -18,6 +18,9 @@ export type FakeToss = {
   failLookup: boolean;
   confirmDelayMs: number;
   idempotencyKeys: (string | undefined)[];
+  /** Cancels Toss actually applied, as opposed to replayed for a repeated Idempotency-Key. */
+  appliedCancels: number;
+  cancelDelayMs: number;
   close(): Promise<void>;
 };
 
@@ -30,8 +33,13 @@ export async function startFakeToss(): Promise<FakeToss> {
     failLookup: false,
     confirmDelayMs: 0,
     idempotencyKeys: [],
+    appliedCancels: 0,
+    cancelDelayMs: 0,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
+  // Toss answers a repeated Idempotency-Key with the first response (docs: using-api/idempotency-key).
+  const replies = new Map<string, { status: number; body: unknown }>();
+  let txSeq = 0;
   const server: Server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -47,10 +55,36 @@ export async function startFakeToss(): Promise<FakeToss> {
         if (state.rejectConfirm) return send(400, { code: "REJECT_CARD_COMPANY", message: "card rejected" });
         const body = JSON.parse(raw);
         // Toss keeps the approval, so a later lookup finds it even if our side never stored it.
-        const approved = { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount };
+        const approved = { ...paymentDone, paymentKey: body.paymentKey, orderId: body.orderId, totalAmount: body.amount, balanceAmount: body.amount };
         state.payments[body.paymentKey] = approved;
         const reply = () => send(200, approved);
         return state.confirmDelayMs ? void setTimeout(reply, state.confirmDelayMs) : reply();
+      }
+      const cancel = url.pathname.match(/^\/v1\/payments\/([^/]+)\/cancel$/);
+      if (req.method === "POST" && cancel) {
+        const key = req.headers["idempotency-key"] as string | undefined;
+        state.idempotencyKeys.push(key);
+        const seen = key ? replies.get(key) : undefined;
+        if (seen) return send(seen.status, seen.body);
+        const reply = (status: number, body: unknown) => {
+          if (key) replies.set(key, { status, body });
+          setTimeout(() => send(status, body), state.cancelDelayMs);
+        };
+        const payment = state.payments[decodeURIComponent(cancel[1]!)] as
+          | { balanceAmount: number; cancels: unknown[] | null; status: string }
+          | undefined;
+        if (!payment) return reply(404, { code: "NOT_FOUND_PAYMENT", message: "not found" });
+        const { cancelAmount = payment.balanceAmount } = JSON.parse(raw);
+        if (cancelAmount > payment.balanceAmount) return reply(403, { code: "NOT_CANCELABLE_AMOUNT", message: "too much" });
+        const balanceAmount = payment.balanceAmount - cancelAmount;
+        const entry = { transactionKey: `tx-${++txSeq}`, cancelAmount, canceledAt: "2026-10-19T19:00:00+09:00", cancelStatus: "DONE" };
+        Object.assign(payment, {
+          balanceAmount,
+          status: balanceAmount === 0 ? "CANCELED" : "PARTIAL_CANCELED",
+          cancels: [...(payment.cancels ?? []), entry],
+        });
+        state.appliedCancels++;
+        return reply(200, structuredClone(payment));
       }
       if (req.method === "GET" && url.pathname.startsWith("/v1/payments/orders/")) {
         const orderId = decodeURIComponent(url.pathname.split("/").pop()!);
@@ -78,7 +112,7 @@ export async function startApp(): Promise<{ db: Db; app: ReturnType<typeof creat
   process.env.TOSS_CLIENT_KEY = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm";
   process.env.TOSS_SECRET_KEY = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6";
   const db = createDb();
-  await db.query("TRUNCATE webhook_events, payments, orders CASCADE");
+  await db.query("TRUNCATE webhook_events, cancel_requests, payment_cancels, payments, orders CASCADE");
   return { db, app: createApp(db) };
 }
 

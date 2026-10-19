@@ -21,7 +21,7 @@ async function seed(key: string, amount: number, status: string, approvedAt: str
   const orderId = `o-${key}`;
   await ctx.db.query("INSERT INTO orders (order_id, order_name, amount, status) VALUES ($1, 'x', $2, 'PAID')", [orderId, amount]);
   await ctx.db.query(
-    "INSERT INTO payments (payment_key, order_id, amount, status, approved_at) VALUES ($1, $2, $3, $4, $5)",
+    "INSERT INTO payments (payment_key, order_id, amount, balance_amount, status, approved_at) VALUES ($1, $2, $3, $3, $4, $5)",
     [key, orderId, amount, status, approvedAt],
   );
 }
